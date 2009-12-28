@@ -1,0 +1,129 @@
+/********************************************************
+ *********************** DYNAMICS ***********************
+ ********************************************************
+ *
+ * B1 and BETA1, B2 and BETA2 are separated in order to make the tuning of
+ * the dynamic parameters as independent as possible from the robot's physical
+ * and internal constraints.
+ *
+ *   BETA1      Value used in the calculation of LAMBDA(d),
+ *            in the obstacle avoidance part of the dynamics.
+ *
+ *   BETA2      Value used in the calculation of LAMBDA(d)
+ *            in the obstacle avoidance part of the dynamics.
+ *            This value will not be used directly, for another
+ *            unit of distance, other than the milimeter, will
+ *            be used internally - requirements of the robot.
+ *
+ *   B1         Variable containing the value of BETA1.
+ *
+ *   B2         Variable containing the value of BETA2 after
+ *              being converted to the robot's internal units
+ *              of distance.
+ *
+ * LAMBDA
+ *
+ * SIGMA
+ *
+ */
+
+/*
+ * Non dimensional constant.
+ */
+
+#define   TAUOBS          4.5
+/* TIC^(-1) */
+#define   BETA1(tobs,dt)  ( (real) ( 1.0 / ( (real) (tobs) * (dt) ) ) )
+
+/*
+ * MM
+ */
+#define   BETA2           25.0
+
+#define   LAMBDA(d,b2)    ( (real) ( exp( -(d)/(( real) (b2) )) ) )
+    
+#define   SIGMA(d,i)\
+            ( (real) atan( tan( delta_theta[i]/2 ) + ( FICT_RADIUS / ( FICT_RADIUS + (d) ) ) ) )
+
+
+/*
+ *      LOOKUP TABLE
+ *
+ *   The interpretation, as a distance to the obstacle, of the values
+ *   returned by the IR sensors is done using a lookuptable.
+ *   The IR sensors always return a value in the interval
+ *      [ 0 , 2^10 - 1] = [ 0, 1023 ]
+ *   for the IR value is always, atmost, 10 significant bits long.
+ *    
+ *
+ *   N_BITS_SHIFT      The number of bits to shift right in the process
+ *                     of converting the IR value, after being filtered,
+ *                     by the IR sensors into an index for the lookuptable.
+ *                     This value is always nonnegative and less than 10 (ten).
+ *                     Is should also be said that the greater this value,
+ *                     the lesser the number of bits in the remaining value and
+ *                     the lesser the number of entries in the lookuptable.
+ *
+ * N_LOOKUP_VALUES   The number of entries in the lookuptable.
+ *                   This value must satisfy the following condition:
+ *
+ *                      N_LOOKUP_VALUES == 2^(10-N_BITS_SHIFT) + 1
+ *
+ *                   The reason why the lookuptable has one more value
+ *                   than it would be expected is the case where no obstacle
+ *                   has been detected. This case will correspond to a value
+ *                   in distance large enough to determine a very small value
+ *                   (ideally zero) in the obstacle avoidance dynamics.
+ *
+ * Let j be a non negative integer less than N_LOOKUP_VALUES, which is the 
+ * number of entries on the lookup table.
+ *
+ * distance[i][j]  is a nonegative integer which represents, for
+ *                 the sensor 'i', the average value of the distance,
+ *                 in 1/10 of milimeters, of the Robot to the obstacle,
+ *                 whenever the IR value returned by the sensor 'i' falls
+ *                 on the interval
+ *
+ *                   [ 2^j , 2^(j+1) - 1 ]
+ *
+ *                 Because the sensor is unable to distinguish from distances
+ *                 to objects placed at less than, or equal to, 20 milimeters,
+ *                 all the values in the lookuptable are subtracted of these
+ *                 20 milimeters, therefore virtually increasing the radius of
+ *                 the robot by the same value. (thus FICT_RADIUS) 
+ *
+ * obsavoid[i][j]  The lookuptable table. It stores the values of the obstacle
+ *                 avoidance dynamics for each sensor 'i' that detects an 
+ *                 obstable at distances[i][j]. 'j' is a value distilled from
+ *                 the IR sensor's return value.
+ */
+
+#define  N_BITS_SHIFT      6
+#define  N_LOOKUP_VALUES   17
+/*
+ *value defined for Khepera1 should be higher
+#define  NO_OBS            6
+*/
+#define  NO_OBS            10
+#define  NO_OBS_DETECTED   1000000.0
+
+static real distances[NIR][N_LOOKUP_VALUES] = {
+   {NO_OBS_DETECTED,22, 19, 16, 14, 12, 11, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5},
+   {NO_OBS_DETECTED,22, 19, 16, 14, 12, 11, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5},
+   {NO_OBS_DETECTED,22, 19, 16, 14, 12, 11, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5},
+   {NO_OBS_DETECTED,22, 19, 16, 14, 12, 11, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5},
+   {NO_OBS_DETECTED,22, 19, 16, 14, 12, 11, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5},
+   {NO_OBS_DETECTED,22, 19, 16, 13, 11, 10, 9, 7, 6, 5, 4, 3, 2.5, 1.5, 1.0, 0.5} };
+
+#define IR2INDEX(sens_val)\
+                ( ( (sens_val) > NO_OBS ) ? ( (sens_val) >> N_BITS_SHIFT ) + 1 : 0 )
+
+static real obsavoid [NIR][N_LOOKUP_VALUES];
+static real potential[NIR][N_LOOKUP_VALUES];
+
+#define LOOKUP_INVARIANT\
+                ( N_LOOKUP_VALUES == pow(2.0, 10 - N_BITS_SHIFT ) + 1 )
+
+#define LOOKUP_INVARIANT_ERROR_MESSAGE\
+                "Condicoes necessarias a correccao dos valores da lookuptable nao satisfeita!\r\n"
+#define LOOKUP_INVARIANT_ERROR           12
